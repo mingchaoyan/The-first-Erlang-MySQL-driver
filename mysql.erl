@@ -26,13 +26,12 @@
 -define(LOCAL_FILES, 128).
 
 startrecv(Host, Port) ->
-    Self = self(),
-    Pid = spawn(fun () ->
-			recvprocess(Host, Port, Self)
-		end),
+    spawn(fun () ->
+                recvprocess(Host, Port, self())
+        end),
     receive
-	{mysql, sendsocket, Socket} ->
-	    Socket
+        {mysql, sendsocket, Socket} ->
+            Socket
     end.
 
 recvprocess(Host, Port, Parent) ->
@@ -43,35 +42,35 @@ recvprocess(Host, Port, Parent) ->
 
 sendpacket(Parent, Data) ->
     case Data of
-	<<Length:24/little, Num:8, D/binary>> ->
-	    if
-		Length =< size(D) ->
-		    {Packet, Rest} = split_binary(D, Length),
-		    Parent ! {mysql, response, Packet, Num},
-		    sendpacket(Parent, Rest);
-		true ->
-		    Data
-	    end;
-	_ ->
-	    Data
+        <<Length:24/little, Num:8, D/binary>> ->
+            if
+                Length =< size(D) ->
+                    {Packet, Rest} = split_binary(D, Length),
+                    Parent ! {mysql, response, Packet, Num},
+                    sendpacket(Parent, Rest);
+                true ->
+                    Data
+            end;
+        _ ->
+            Data
     end.
 
 recvloop(Sock, Parent, Data) ->
     Rest = sendpacket(Parent, Data),
     receive
-	{tcp, Sock, InData} ->
-	    NewData = concat_binary([Rest, InData]),
-	    recvloop(Sock, Parent, NewData);
-	{tcp_error, Sock, Reason} ->
-	    true;
-	{tcp_closed, Sock} ->
-	    true
+        {tcp, Sock, InData} ->
+            NewData = list_to_binary([Rest, InData]),
+            recvloop(Sock, Parent, NewData);
+        {tcp_error, Sock, _Reason} ->
+            true;
+        {tcp_closed, Sock} ->
+            true
     end.
 
 do_recv() ->
     receive
-	{mysql, response, Packet, Num} ->
-	    {Packet, Num}
+        {mysql, response, Packet, Num} ->
+            {Packet, Num}
     end.
 
 do_send(Sock, Packet, Num) ->
@@ -84,7 +83,7 @@ make_auth(User, Password) ->
     UserB = list_to_binary(User),
     PasswordB = list_to_binary(Password),
     <<Caps:16/little, Maxsize:24/little, UserB/binary, 0:8,
-    PasswordB/binary>>.
+      PasswordB/binary>>.
 
 hash(S) ->
     hash(S, 1345345333, 305419889, 7).
@@ -94,7 +93,7 @@ hash([C | S], N1, N2, Add) ->
     N2_1 = N2 + ((N2 * 256) bxor N1_1),
     Add_1 = Add + C,
     hash(S, N1_1, N2_1, Add_1);
-hash([], N1, N2, Add) ->
+hash([], N1, N2, _Add) ->
     Mask = (1 bsl 31) - 1,
     {N1 band Mask , N2 band Mask}.
 
@@ -120,20 +119,20 @@ password(Password, Salt) ->
     List = rnd(9, Seed1, Seed2),
     {L, [Extra]} = lists:split(8, List),
     lists:map(fun (E) ->
-		      E bxor (Extra - 64)
-	      end, L).
+                E bxor (Extra - 64)
+        end, L).
 
 asciz(Data) ->
     {String, [0 | Rest]} = lists:splitwith(fun (C) ->
-						   C /= 0
-					   end, Data),
+                    C /= 0
+            end, Data),
     {String, Rest}.
 
 greeting(Packet) ->
-    <<Protocol:8, Rest/binary>> = Packet,
-    {Version, Rest2} = asciz(binary_to_list(Rest)),
-    [T1, T2, T3, T4 | Rest3] = Rest2,
-    {Salt, Rest4} = asciz(Rest3),
+    <<_Protocol:8, Rest/binary>> = Packet,
+    {_Version, Rest2} = asciz(binary_to_list(Rest)),
+    [_T1, _T2, _T3, _T4 | Rest3] = Rest2,
+    {Salt, _Rest4} = asciz(Rest3),
     Salt.
 
 get_with_length(<<251:8, Rest/binary>>) ->
@@ -148,56 +147,56 @@ get_with_length(<<Length:8, Rest/binary>>) when Length < 251 ->
     split_binary(Rest, Length).
 
 get_fields() ->
-    {Packet, Num} = do_recv(),
+    {Packet, _Num} = do_recv(),
     case Packet of
-	<<254:8>> ->
-	    [];
-	_ ->
-	    {Table, Rest} = get_with_length(Packet),
-	    {Field, Rest2} = get_with_length(Rest),
-	    {LengthB, Rest3} = get_with_length(Rest2),
-	    LengthL = size(LengthB) * 8,
-	    <<Length:LengthL/little>> = LengthB,
-	    {Type, Rest4} = get_with_length(Rest3),
-	    {Flags, Rest5} = get_with_length(Rest4),
-	    [{binary_to_list(Table),
-	      binary_to_list(Field),
-	      Length,
-	      binary_to_list(Type)} | get_fields()]
+        <<254:8>> ->
+            [];
+        _ ->
+            {Table, Rest} = get_with_length(Packet),
+            {Field, Rest2} = get_with_length(Rest),
+            {LengthB, Rest3} = get_with_length(Rest2),
+            LengthL = size(LengthB) * 8,
+            <<Length:LengthL/little>> = LengthB,
+            {Type, Rest4} = get_with_length(Rest3),
+            {_Flags, _Rest5} = get_with_length(Rest4),
+            [{binary_to_list(Table),
+              binary_to_list(Field),
+              Length,
+              binary_to_list(Type)} | get_fields()]
     end.
 
-get_row(0, Data) ->
+get_row(0, _Data) ->
     [];
 get_row(N, Data) ->
     {Col, Rest} = get_with_length(Data),
     [case Col of
-	 null ->
-	     null;
-	 _ ->
-	     binary_to_list(Col)
-     end | get_row(N - 1, Rest)].
+            null ->
+                null;
+            _ ->
+                binary_to_list(Col)
+        end | get_row(N - 1, Rest)].
 
 get_rows(N) ->
-    {Packet, Num} = do_recv(),
+    {Packet, _Num} = do_recv(),
     case Packet of
-	<<254:8>> ->
-	    [];
-	_ ->
-	    [get_row(N, Packet) | get_rows(N)]
+        <<254:8>> ->
+            [];
+        _ ->
+            [get_row(N, Packet) | get_rows(N)]
     end.
 
 get_query_response() ->
     {<<Fieldcount:8, Rest/binary>>, _} = do_recv(),
     case Fieldcount of
-	0 ->
-	    {[], []};
-	255 ->
-	    <<Code:16/little, Message/binary>>  = Rest,
-	    {error, binary_to_list(Message)};
-	_ ->
-	    Fields = get_fields(),
-	    Rows = get_rows(Fieldcount),
-	    {Fields, Rows}
+        0 ->
+            {[], []};
+        255 ->
+            <<_Code:16/little, Message/binary>>  = Rest,
+            {error, binary_to_list(Message)};
+        _ ->
+            Fields = get_fields(),
+            Rows = get_rows(Fieldcount),
+            {Fields, Rows}
     end.
 
 do_query(Sock, Query) ->
@@ -207,21 +206,21 @@ do_query(Sock, Query) ->
     get_query_response().
 
 do_init(Sock, User, Password) ->
-    {Packet, Num} = do_recv(),
+    {Packet, _Num} = do_recv(),
     Salt = greeting(Packet),
     Auth = password(Password, Salt),
     Packet2 = make_auth(User, Auth),
     do_send(Sock, Packet2, 1),
-    {Packet3, Num3} = do_recv(),
+    {Packet3, _Num3} = do_recv(),
     case Packet3 of
-	<<0:8, Rest/binary>> ->
-	    ok;
-	<<255:8, Code:16/little, Message/binary>> ->
-	    io:format("Error ~p: ~p", [Code, binary_to_list(Message)]),
-	    error;
-	_ ->
-	    io:format("Unknown error ~p", [binary_to_list(Packet3)]),
-	    error
+        <<0:8, _Rest/binary>> ->
+            ok;
+        <<255:8, Code:16/little, Message/binary>> ->
+            io:format("Error ~p: ~p", [Code, binary_to_list(Message)]),
+            error;
+        _ ->
+            io:format("Unknown error ~p", [binary_to_list(Packet3)]),
+            error
     end.
 
 connect(Host, User, Password, Database) ->
@@ -229,41 +228,41 @@ connect(Host, User, Password, Database) ->
 
 connect(Host, User, Password, Database, closed) ->
     receive
-	{mysql, fetchquery, Query, Pid} ->
-	    Sock = startrecv(Host, 3306),
-	    case do_init(Sock, User, Password) of
-		ok ->
-		    do_query(Sock, "use " ++ Database),
-		    Result = do_query(Sock, Query),
-		    Pid ! {mysql, result, Result},
-		    connect(Host, User, Password, Database, {open, Sock});
-		_ ->
-		    gen_tcp:close(Sock),
-		    connect(Host, User, Password, Database, closed)
-	    end
+        {mysql, fetchquery, Query, Pid} ->
+            Sock = startrecv(Host, 3306),
+            case do_init(Sock, User, Password) of
+                ok ->
+                    do_query(Sock, "use " ++ Database),
+                    Result = do_query(Sock, Query),
+                    Pid ! {mysql, result, Result},
+                    connect(Host, User, Password, Database, {open, Sock});
+                _ ->
+                    gen_tcp:close(Sock),
+                    connect(Host, User, Password, Database, closed)
+            end
     end;
 connect(Host, User, Password, Database, {open, Sock}) ->
     receive
-	{mysql, fetchquery, Query, Pid} ->
-	    Result = do_query(Sock, Query),
-	    Pid ! {mysql, result, Result},
-	    connect(Host, User, Password, Database, {open, Sock});
-	{mysql, closed} ->
-	    connect(Host, User, Password, Database, closed)
+        {mysql, fetchquery, Query, Pid} ->
+            Result = do_query(Sock, Query),
+            Pid ! {mysql, result, Result},
+            connect(Host, User, Password, Database, {open, Sock});
+        {mysql, closed} ->
+            connect(Host, User, Password, Database, closed)
     end.
 
 start(Host, User, Password, Database) ->
     Pid = spawn(fun () ->
-			connect(Host, User, Password, Database)
-		end),
+                    connect(Host, User, Password, Database)
+            end),
     register(mysql, Pid).
 
 fetch(Query) ->
     mysql ! {mysql, fetchquery, Query, self()},
     receive
-	{mysql, result, Result} ->
-	    Result
+        {mysql, result, Result} ->
+            Result
     after
-	100 ->
-	    none
+        100 ->
+            none
     end.

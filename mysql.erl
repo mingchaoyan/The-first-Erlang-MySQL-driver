@@ -149,7 +149,7 @@ get_with_length(<<Length:8, Rest/binary>>) when Length < 251 ->
     split_binary(Rest, Length).
 
 get_fields() ->
-    {Packet, Num} = do_recv(),
+    {Packet, _Num} = do_recv(),
     case Packet of
         <<254:8>> ->
             [];
@@ -160,14 +160,14 @@ get_fields() ->
             LengthL = size(LengthB) * 8,
             <<Length:LengthL/little>> = LengthB,
             {Type, Rest4} = get_with_length(Rest3),
-            {Flags, Rest5} = get_with_length(Rest4),
+            {_Flags, _Rest5} = get_with_length(Rest4),
             [{binary_to_list(Table),
               binary_to_list(Field),
               Length,
               binary_to_list(Type)} | get_fields()]
     end.
 
-get_row(0, Data) ->
+get_row(0, _Data) ->
     [];
 get_row(N, Data) ->
     {Col, Rest} = get_with_length(Data),
@@ -179,7 +179,7 @@ get_row(N, Data) ->
         end | get_row(N - 1, Rest)].
 
 get_rows(N) ->
-    {Packet, Num} = do_recv(),
+    {Packet, _Num} = do_recv(),
     case Packet of
         <<254:8>> ->
             [];
@@ -193,7 +193,7 @@ get_query_response() ->
         0 ->
             {[], []};
         255 ->
-            <<Code:16/little, Message/binary>>  = Rest,
+            <<_Code:16/little, Message/binary>>  = Rest,
             {error, binary_to_list(Message)};
         _ ->
             Fields = get_fields(),
@@ -208,14 +208,14 @@ do_query(Sock, Query) ->
     get_query_response().
 
 do_init(Sock, User, Password) ->
-    {Packet, Num} = do_recv(),
+    {Packet, _Num} = do_recv(),
     Salt = greeting(Packet),
     Auth = password(Password, Salt),
     Packet2 = make_auth(User, Auth),
     do_send(Sock, Packet2, 1),
-    {Packet3, Num3} = do_recv(),
+    {Packet3, _Num3} = do_recv(),
     case Packet3 of
-        <<0:8, Rest/binary>> ->
+        <<0:8, _Rest/binary>> ->
             ok;
         <<255:8, Code:16/little, Message/binary>> ->
             io:format("Error ~p: ~p", [Code, binary_to_list(Message)]),

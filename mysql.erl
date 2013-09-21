@@ -95,7 +95,7 @@ hash([C | S], N1, N2, Add) ->
     N2_1 = N2 + ((N2 * 256) bxor N1_1),
     Add_1 = Add + C,
     hash(S, N1_1, N2_1, Add_1);
-hash([], N1, N2, Add) ->
+hash([], N1, N2, _Add) ->
     Mask = (1 bsl 31) - 1,
     {N1 band Mask , N2 band Mask}.
 
@@ -131,10 +131,10 @@ asciz(Data) ->
     {String, Rest}.
 
 greeting(Packet) ->
-    <<Protocol:8, Rest/binary>> = Packet,
-    {Version, Rest2} = asciz(binary_to_list(Rest)),
-    [T1, T2, T3, T4 | Rest3] = Rest2,
-    {Salt, Rest4} = asciz(Rest3),
+    <<_Protocol:8, Rest/binary>> = Packet,
+    {_Version, Rest2} = asciz(binary_to_list(Rest)),
+    [_T1, _T2, _T3, _T4 | Rest3] = Rest2,
+    {Salt, _Rest4} = asciz(Rest3),
     Salt.
 
 get_with_length(<<251:8, Rest/binary>>) ->

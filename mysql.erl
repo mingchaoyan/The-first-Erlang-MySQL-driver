@@ -263,6 +263,6 @@ fetch(Query) ->
         {mysql, result, Result} ->
             Result
     after
-        100 ->
+        1000 ->
             none
     end.

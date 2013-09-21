@@ -26,9 +26,10 @@
 -define(LOCAL_FILES, 128).
 
 startrecv(Host, Port) ->
-    spawn(fun () ->
-                recvprocess(Host, Port, self())
-        end),
+    Self = self(),
+    Pid = spawn(fun () ->
+                    recvprocess(Host, Port, Self)
+            end),
     receive
         {mysql, sendsocket, Socket} ->
             Socket
@@ -59,9 +60,10 @@ recvloop(Sock, Parent, Data) ->
     Rest = sendpacket(Parent, Data),
     receive
         {tcp, Sock, InData} ->
+            %NewData = concat_binary([Rest, InData]),
             NewData = list_to_binary([Rest, InData]),
             recvloop(Sock, Parent, NewData);
-        {tcp_error, Sock, _Reason} ->
+        {tcp_error, Sock, Reason} ->
             true;
         {tcp_closed, Sock} ->
             true
@@ -93,7 +95,7 @@ hash([C | S], N1, N2, Add) ->
     N2_1 = N2 + ((N2 * 256) bxor N1_1),
     Add_1 = Add + C,
     hash(S, N1_1, N2_1, Add_1);
-hash([], N1, N2, _Add) ->
+hash([], N1, N2, Add) ->
     Mask = (1 bsl 31) - 1,
     {N1 band Mask , N2 band Mask}.
 
@@ -129,10 +131,10 @@ asciz(Data) ->
     {String, Rest}.
 
 greeting(Packet) ->
-    <<_Protocol:8, Rest/binary>> = Packet,
-    {_Version, Rest2} = asciz(binary_to_list(Rest)),
-    [_T1, _T2, _T3, _T4 | Rest3] = Rest2,
-    {Salt, _Rest4} = asciz(Rest3),
+    <<Protocol:8, Rest/binary>> = Packet,
+    {Version, Rest2} = asciz(binary_to_list(Rest)),
+    [T1, T2, T3, T4 | Rest3] = Rest2,
+    {Salt, Rest4} = asciz(Rest3),
     Salt.
 
 get_with_length(<<251:8, Rest/binary>>) ->
@@ -147,7 +149,7 @@ get_with_length(<<Length:8, Rest/binary>>) when Length < 251 ->
     split_binary(Rest, Length).
 
 get_fields() ->
-    {Packet, _Num} = do_recv(),
+    {Packet, Num} = do_recv(),
     case Packet of
         <<254:8>> ->
             [];
@@ -158,14 +160,14 @@ get_fields() ->
             LengthL = size(LengthB) * 8,
             <<Length:LengthL/little>> = LengthB,
             {Type, Rest4} = get_with_length(Rest3),
-            {_Flags, _Rest5} = get_with_length(Rest4),
+            {Flags, Rest5} = get_with_length(Rest4),
             [{binary_to_list(Table),
               binary_to_list(Field),
               Length,
               binary_to_list(Type)} | get_fields()]
     end.
 
-get_row(0, _Data) ->
+get_row(0, Data) ->
     [];
 get_row(N, Data) ->
     {Col, Rest} = get_with_length(Data),
@@ -177,7 +179,7 @@ get_row(N, Data) ->
         end | get_row(N - 1, Rest)].
 
 get_rows(N) ->
-    {Packet, _Num} = do_recv(),
+    {Packet, Num} = do_recv(),
     case Packet of
         <<254:8>> ->
             [];
@@ -191,7 +193,7 @@ get_query_response() ->
         0 ->
             {[], []};
         255 ->
-            <<_Code:16/little, Message/binary>>  = Rest,
+            <<Code:16/little, Message/binary>>  = Rest,
             {error, binary_to_list(Message)};
         _ ->
             Fields = get_fields(),
@@ -206,14 +208,14 @@ do_query(Sock, Query) ->
     get_query_response().
 
 do_init(Sock, User, Password) ->
-    {Packet, _Num} = do_recv(),
+    {Packet, Num} = do_recv(),
     Salt = greeting(Packet),
     Auth = password(Password, Salt),
     Packet2 = make_auth(User, Auth),
     do_send(Sock, Packet2, 1),
-    {Packet3, _Num3} = do_recv(),
+    {Packet3, Num3} = do_recv(),
     case Packet3 of
-        <<0:8, _Rest/binary>> ->
+        <<0:8, Rest/binary>> ->
             ok;
         <<255:8, Code:16/little, Message/binary>> ->
             io:format("Error ~p: ~p", [Code, binary_to_list(Message)]),
@@ -263,6 +265,6 @@ fetch(Query) ->
         {mysql, result, Result} ->
             Result
     after
-        1000 ->
+        100 ->
             none
     end.

@@ -27,9 +27,9 @@
 
 startrecv(Host, Port) ->
     Self = self(),
-    Pid = spawn(fun () ->
-                    recvprocess(Host, Port, Self)
-            end),
+    spawn(fun () ->
+                recvprocess(Host, Port, Self)
+        end),
     receive
         {mysql, sendsocket, Socket} ->
             Socket

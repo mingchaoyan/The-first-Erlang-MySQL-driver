@@ -63,7 +63,7 @@ recvloop(Sock, Parent, Data) ->
             %NewData = concat_binary([Rest, InData]),
             NewData = list_to_binary([Rest, InData]),
             recvloop(Sock, Parent, NewData);
-        {tcp_error, Sock, Reason} ->
+        {tcp_error, Sock, _Reason} ->
             true;
         {tcp_closed, Sock} ->
             true
